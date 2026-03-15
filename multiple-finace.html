@@ -1,0 +1,349 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-User Finance Tracker</title>
+<style>
+*{box-sizing:border-box;font-family:Segoe UI,Arial;}
+body{
+  margin:0;
+  background:linear-gradient(135deg,#4facfe,#00f2fe,#43e97b,#38f9d7);
+  background-size:800% 800%;
+  animation:bgMove 12s ease infinite;
+  display:flex;
+  justify-content:center;
+  align-items:flex-start;
+  min-height:100vh;
+  padding:10px;
+}
+@keyframes bgMove{
+0%{background-position:0% 50%;}
+50%{background-position:100% 50%;}
+100%{background-position:0% 50%;}
+}
+.app{
+  width:100%;
+  max-width:450px;
+  background:rgba(255,255,255,0.2);
+  backdrop-filter:blur(20px);
+  border-radius:20px;
+  padding:20px;
+  box-shadow:0 15px 40px rgba(0,0,0,0.3);
+  color:white;
+  margin-top:20px;
+}
+h1{text-align:center;margin-top:0;}
+input, select{width:100%;padding:10px;margin:6px 0;border:none;border-radius:8px;}
+button{padding:10px 15px;margin:3px;border:none;border-radius:8px;cursor:pointer;}
+.add{background:#00c853;color:white;}
+.download{background:#2979ff;color:white;}
+.clear{background:#ff5252;color:white;}
+.deleteDate{background:#d32f2f;color:white;}
+.edit{background:#ffd600;}
+.delete{background:#ff1744;color:white;}
+ul{list-style:none;padding:0;max-height:250px;overflow:auto;}
+li{background:white;color:black;padding:10px;margin:5px 0;border-radius:8px;display:flex;justify-content:space-between;align-items:center;}
+li button{margin-left:5px;padding:4px 6px;}
+canvas{background:rgba(255,255,255,0.1);border-radius:12px;margin-top:15px;}
+#loginDiv,#registerDiv,#trackerDiv{display:none;}
+a{color:#fff;text-decoration:underline;cursor:pointer;}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+<!-- LOGIN SCREEN -->
+<div id="loginDiv">
+<h1>Login</h1>
+<input type="text" id="loginUser" placeholder="Username">
+<input type="password" id="loginPass" placeholder="Password">
+<button onclick="login()">Login</button>
+<p>Don't have an account? <a onclick="showRegister()">Register</a></p>
+</div>
+
+<!-- REGISTER SCREEN -->
+<div id="registerDiv">
+<h1>Register</h1>
+<input type="text" id="regUser" placeholder="Username">
+<input type="password" id="regPass" placeholder="Password">
+<button onclick="register()">Register</button>
+<p>Already have an account? <a onclick="showLogin()">Login</a></p>
+</div>
+
+<!-- TRACKER SCREEN -->
+<div id="trackerDiv">
+<h1>💰 Finance Tracker</h1>
+<p>Logged in as: <span id="currentUserDisplay"></span> <button onclick="logout()">Logout</button></p>
+
+<input type="date" id="date">
+<input id="item" placeholder="Expense name">
+<input type="number" id="amount" placeholder="Amount">
+<select id="category">
+  <option value="">Select Category</option>
+  <option value="Food">🍔 Food</option>
+  <option value="Travel">🚌 Travel</option>
+  <option value="Shopping">🛍️ Shopping</option>
+  <option value="Other">Other</option>
+</select>
+
+<button class="add" onclick="addExpense()">Add Expense</button>
+<button class="download" onclick="downloadReport()">Download Report</button>
+<button class="clear" onclick="clearInputs()">Clear Inputs</button>
+<button class="deleteDate" onclick="deleteDateData()">Delete Date Data</button>
+
+<input id="search" placeholder="Search expenses..." onkeyup="searchExpenses()">
+
+<div class="totals">
+<p>Daily Total: $<span id="total">0</span></p>
+<p>All Time Total: $<span id="grandTotal">0</span></p>
+</div>
+
+<h3>Monthly Totals</h3>
+<ul id="monthlyTotals"></ul>
+
+<h3>Expenses</h3>
+<ul id="list"></ul>
+
+<canvas id="chart" width="400" height="200"></canvas>
+</div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// --- USER SYSTEM ---
+let users = JSON.parse(localStorage.getItem("users")) || {};
+let currentUser = sessionStorage.getItem("currentUser") || null;
+
+const loginDiv = document.getElementById("loginDiv");
+const registerDiv = document.getElementById("registerDiv");
+const trackerDiv = document.getElementById("trackerDiv");
+const currentUserDisplay = document.getElementById("currentUserDisplay");
+
+function showLogin(){loginDiv.style.display="block"; registerDiv.style.display="none"; trackerDiv.style.display="none";}
+function showRegister(){loginDiv.style.display="none"; registerDiv.style.display="block"; trackerDiv.style.display="none";}
+
+function login(){
+  const u = document.getElementById("loginUser").value.trim();
+  const p = document.getElementById("loginPass").value;
+  users = JSON.parse(localStorage.getItem("users")) || {};
+  if(!u||!p){alert("Fill all fields"); return;}
+  if(users[u] && users[u].password===p){
+    currentUser = u;
+    sessionStorage.setItem("currentUser", u);
+    data = users[currentUser].expenses || {}; // load user expenses
+    showTracker();
+  } else {alert("Invalid username/password");}
+}
+
+function register(){
+  const u = document.getElementById("regUser").value.trim();
+  const p = document.getElementById("regPass").value;
+  if(!u||!p){alert("Fill all fields"); return;}
+  users = JSON.parse(localStorage.getItem("users")) || {};
+  if(users[u]){alert("Username already exists"); return;}
+  users[u] = {password:p, expenses:{}};
+  localStorage.setItem("users", JSON.stringify(users));
+  alert("Registered! Please login.");
+  showLogin();
+}
+
+function logout(){
+  sessionStorage.removeItem("currentUser");
+  currentUser = null;
+  showLogin();
+}
+
+// --- SHOW TRACKER ---
+function showTracker(){
+  loginDiv.style.display="none";
+  registerDiv.style.display="none";
+  trackerDiv.style.display="block";
+  currentUserDisplay.textContent = currentUser;
+  data = users[currentUser].expenses || {};
+  showData();
+}
+
+// --- EXPENSE TRACKER ---
+let data = {};
+
+const dateInput = document.getElementById("date");
+const itemInput = document.getElementById("item");
+const amountInput = document.getElementById("amount");
+const categoryInput = document.getElementById("category");
+const search = document.getElementById("search");
+const list = document.getElementById("list");
+const grandTotal = document.getElementById("grandTotal");
+
+dateInput.addEventListener("change",showData);
+
+function addExpense(){
+  let date = dateInput.value;
+  let item = itemInput.value;
+  let amount = Number(amountInput.value);
+  let category = categoryInput.value || "Other";
+  if(!date||!item||!amount){alert("Fill all fields"); return;}
+  if(!data[date]) data[date] = [];
+  data[date].push({item, amount, category});
+  saveUserData();
+  showData();
+}
+
+function showData(){
+  let date = dateInput.value;
+  list.innerHTML="";
+  let total=0;
+  if(data[date]){
+    data[date].forEach((exp,i)=>{
+      let li=document.createElement("li");
+      li.innerHTML=`${exp.item} - $${exp.amount} [${exp.category}]
+      <span>
+      <button class="edit" onclick="editExpense(${i})">Edit</button>
+      <button class="delete" onclick="deleteExpense(${i})">Delete</button>
+      </span>`;
+      list.appendChild(li);
+      total+=exp.amount;
+    });
+  }
+  document.getElementById("total").textContent=total;
+  calculateGrandTotal();
+  calculateMonthlyTotals();
+  updateChart();
+}
+
+function deleteExpense(i){
+  let date = dateInput.value;
+  data[date].splice(i,1);
+  saveUserData();
+  showData();
+}
+
+function editExpense(i){
+  let date = dateInput.value;
+  let newItem = prompt("Edit item",data[date][i].item);
+  let newAmount = prompt("Edit amount",data[date][i].amount);
+  let newCategory = prompt("Edit category",data[date][i].category);
+  if(newItem && newAmount){
+    data[date][i].item=newItem;
+    data[date][i].amount=Number(newAmount);
+    data[date][i].category=newCategory || "Other";
+    saveUserData();
+    showData();
+  }
+}
+
+function clearInputs(){
+  dateInput.value="";
+  itemInput.value="";
+  amountInput.value="";
+  categoryInput.value="";
+  search.value="";
+  list.innerHTML="";
+  document.getElementById("total").textContent=0;
+}
+
+function deleteDateData(){
+  let date = dateInput.value;
+  if(!date){return alert("Select a date to delete data");}
+  if(confirm(`Delete all expenses for ${date}?`)){
+    delete data[date];
+    saveUserData();
+    showData();
+  }
+}
+
+function calculateGrandTotal(){
+  let total=0;
+  for(let d in data){data[d].forEach(e=>total+=e.amount);}
+  grandTotal.textContent=total;
+}
+
+function calculateMonthlyTotals(){
+  let monthly={};
+  for(let d in data){
+    let m=d.substring(0,7);
+    if(!monthly[m]) monthly[m]=0;
+    data[d].forEach(e=>monthly[m]+=e.amount);
+  }
+  let listMonthly=document.getElementById("monthlyTotals");
+  listMonthly.innerHTML="";
+  for(let m in monthly){
+    let li=document.createElement("li");
+    li.textContent=m+" : $"+monthly[m];
+    listMonthly.appendChild(li);
+  }
+}
+
+function searchExpenses(){
+  let q = search.value.toLowerCase();
+  list.innerHTML="";
+  for(let d in data){
+    data[d].forEach((exp,i)=>{
+      let text = (d+" "+exp.item+" "+exp.amount+" "+exp.category).toLowerCase();
+      if(text.includes(q)){
+        let li=document.createElement("li");
+        li.innerHTML=`${d} - ${exp.item} - $${exp.amount} [${exp.category}]
+        <span>
+        <button class="edit" onclick="editExpense(${i})">Edit</button>
+        <button class="delete" onclick="deleteExpense(${i})">Delete</button>
+        </span>`;
+        list.appendChild(li);
+      }
+    });
+  }
+}
+
+function downloadReport(){
+  let csv="Date,Item,Amount,Category\n";
+  for(let d in data){
+    data[d].forEach(e=>{csv+=d+","+e.item+","+e.amount+","+e.category+"\n";});
+  }
+  let blob=new Blob([csv],{type:"text/csv"});
+  let a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=`${currentUser}_expense_report.csv`;
+  a.click();
+}
+
+// --- Chart.js ---
+let chart;
+function updateChart(){
+  const ctx = document.getElementById('chart').getContext('2d');
+  let monthly={};
+  for(let d in data){
+    let m=d.substring(0,7);
+    if(!monthly[m]) monthly[m]=0;
+    data[d].forEach(e=>monthly[m]+=e.amount);
+  }
+  let labels = Object.keys(monthly);
+  let values = Object.values(monthly);
+  if(chart) chart.destroy();
+  chart = new Chart(ctx,{
+    type:'bar',
+    data:{labels:labels,datasets:[{label:'Monthly Spending',data:values,backgroundColor:'rgba(0,200,83,0.6)',borderColor:'rgba(0,200,83,1)',borderWidth:1}]},
+    options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
+  });
+}
+
+// --- SAVE USER DATA ---
+function saveUserData(){
+  users = JSON.parse(localStorage.getItem("users")) || {};
+  users[currentUser].expenses = data;
+  localStorage.setItem("users", JSON.stringify(users));
+}
+
+// --- INIT ---
+if(currentUser){
+  users = JSON.parse(localStorage.getItem("users")) || {};
+  data = users[currentUser].expenses || {};
+  showTracker();
+}else{
+  showLogin();
+}
+</script>
+</body>
+</html>
+```
